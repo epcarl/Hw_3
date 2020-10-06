@@ -1,0 +1,167 @@
+---
+title: "Homework 3"
+author: "Erik Carlson"
+date: "10/5/2020"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+load("my_work_space.RData")
+library("ggplot2")
+library("RColorBrewer")
+library("class")
+library("stats")
+```
+
+## Knn Borough Prediction
+
+This homework was done with my study group of Emmanuel Mendez, Emily Vasquez, and Joe Correa.
+
+We started by using the knn method to predict the Borough of the residents, later this method was used to predict neighborhoods.  First the acs data was loaded into R and the different boroughs were selected as factors for later comparison.  Since we are only considerned with neighboorhoods and boroughs in New York City, the data was subsetted to include only those in New York City and those in an age range between 20 and 60.
+
+```{r message=FALSE}
+
+
+load("acs2017_ny_data.RData")
+PUMA_lev<-read.csv("PUMA_levels.csv")
+dat_NYC <- subset(acs2017_ny, (acs2017_ny$in_NYC == 1)&(acs2017_ny$AGE > 20) & (acs2017_ny$AGE < 66))
+attach(dat_NYC)
+borough_f <- factor((in_Bronx + 2*in_Manhattan 
+                     + 3*in_StatenI + 4*in_Brooklyn + 5*in_Queens), 
+                    levels=c(1,2,3,4,5),
+                    labels = c("Bronx","Manhattan","Staten Island","Brooklyn","Queens"))
+
+
+```
+
+In order to classify by borough with a high accuracy, selection of variables is critical.  By using housing cost and total income, a correct rate of about 37% was found.  Given that the sample proportion of Brooklyn is 35.3%, is it only marginally better than guessing that every resident is in Brooklyn.  Therefore other variables were tested and selected. 
+
+It was thought that differences in the cost of gas and other housing costs such as fuel, waer, electricity along with diferences in family size would differ across the different boroughs.  Therefore given the correct variables, the sum of them would compound these differences, allowing for better guessing.  Variables and the sum of different variables were selected to maximize the correct guess rate.
+
+Household income was found to be a better indicator than total income, so it was selected instead.
+
+```{r }
+norm_varb <- function(X_in) {
+  (max(X_in, na.rm = TRUE) - X_in)/( max(X_in, na.rm = TRUE) - min(X_in, na.rm = TRUE) )
+}
+  
+add_t<- COSTGAS + COSTFUEL + COSTWATR + COSTELEC + FAMSIZE + FUELHEAT 
+norm_1 <- norm_varb(add_t)
+norm_2 <- norm_varb(HHINCOME)
+
+```
+
+Following this the algrorithm was trained with 80% of the data, and tested with 20%.
+
+```{r , message=FALSE }
+#data_use_prelim <- data.frame(norm_1,norm_2) 
+# Above Code commented out to solve knitting error. but result was loaded from workspace
+good_obs_data_use <- complete.cases(data_use_prelim,borough_f)
+dat_use <- subset(data_use_prelim,good_obs_data_use)
+y_use <- subset(borough_f,good_obs_data_use)
+
+set.seed(12345)
+NN_obs <- sum(good_obs_data_use == 1)
+select1 <- (runif(NN_obs) < 0.8)
+train_data <- subset(dat_use,select1)
+test_data <- subset(dat_use,(!select1))
+cl_data <- y_use[select1]
+true_data <- y_use[!select1]
+```
+
+And the knn algorithm was run and compared with the true data in order to find the correct rate.
+
+```{r }
+summary(cl_data)
+prop.table(summary(cl_data))
+summary(train_data)
+require(class)
+for (indx in seq(1, 9, by= 2)) {
+  pred_borough <- knn(train_data, test_data, cl_data, k = indx, l = 0, prob = FALSE, use.all = TRUE)
+  num_correct_labels <- sum(pred_borough == true_data)
+  correct_rate <- num_correct_labels/length(true_data)
+  print(c(indx,correct_rate))
+}
+```
+
+The correct rate was found for to be 79.8% for k nearest neighbor(where k=1) and for k>1 it is less, about 50% overall. K=1 had the highest accuracy, much higher than the original 37% or the 35% Brooklyn guess.  
+
+Normally k=1 may be inaccurate due to overfitting to the test data, this overfitting leading to inaccuracies when using a different dataset.  Therefore higher k's may bring greater accurracy if overfitting is an issue.  However, given that k=1 is the most accurate, it can be seen that overfitting is not as severe an issue and that it is possible that there are clear boundaries for the variables that k nearest neighbor analysis is optimal for.  In order to confirm that this is due to clear boundaries, additional datasets need to be tested.  K=1 may be the most accurate, however a lower amount of neighbors make it more suceptable to biases in the original sample.
+
+
+The Borough proportion of the sample was graphed below in order to show the makeup of the sample.
+
+```{r , echo=FALSE}
+dft <- data.frame(Proportion=prop.table(summary(cl_data)))
+dft <- cbind(Borough = rownames(dft), dft)
+rownames(dft) <- 1:nrow(dft)
+ggplot(data=dft, aes(y=Proportion, x=Borough, fill=Borough)) + 
+  geom_bar(stat="identity") + scale_fill_brewer(palette = "Spectral") +ggtitle("Sample Borough Proportion")
+```
+
+
+
+
+
+
+## Neighborhood Prediction
+
+Following guessing the borough, neighborhood was confisidered.  The neighborhood is listed in the column "PUMA", and is four numbers long.  The corresponding neighborhood for these codes is located in a PUMA_level csv file.  
+
+Given that the factor is now the neighborhood instead of borough, the different neighborhood codes in PUMA was used instead of the boroughs.  Other possible variables were considered, however after testing these same variables were effective in classifying by neighborhood.
+
+```{r }
+borough_f <- factor(PUMA)
+
+add_t<- COSTGAS + COSTFUEL + COSTWATR + COSTELEC + FAMSIZE + FUELHEAT 
+
+norm_1 <- norm_varb(add_t)
+norm_2 <- norm_varb(HHINCOME)
+```
+
+The data was used to train and test the algorithm using the methodology that was used for boroughs.
+
+```{r , message=FALSE}
+#data_use_prelim <- data.frame(norm_1,norm_2)
+# Above Code commented out to solve knitting error. but result was loaded from workspace
+good_obs_data_use <- complete.cases(data_use_prelim,borough_f)
+dat_use <- subset(data_use_prelim,good_obs_data_use)
+y_use <- subset(borough_f,good_obs_data_use)
+
+set.seed(12345)
+NN_obs <- sum(good_obs_data_use == 1)
+select1 <- (runif(NN_obs) < 0.8)
+train_data <- subset(dat_use,select1)
+test_data <- subset(dat_use,(!select1))
+cl_data <- y_use[select1]
+true_data <- y_use[!select1]
+
+```
+``` {r}
+summary(cl_data)
+prop.table(summary(cl_data))
+summary(train_data)
+require(class)
+for (indx in seq(1, 9, by= 2)) {
+  pred_borough <- knn(train_data, test_data, cl_data, k = indx, l = 0, prob = FALSE, use.all = TRUE)
+  num_correct_labels <- sum(pred_borough == true_data)
+  correct_rate <- num_correct_labels/length(true_data)
+  print(c(indx,correct_rate))
+}
+```
+
+Using this method, for k nearest neighbor(k=1) was 69.8% accurate while k=3 was 28.3% accurate, where accuracy decreased as k increased.  Similar to the bourough test, the algoritm was most accurate when k was equal to one. It was surprising that the same methodology only led to a 10% decrease in accuracy for k=1 since there are many more possible neighborhoods when compared with the 5 boroughs.  Additional datasets would be necessary in order to determine whether this is true for data outside the training and testing data.  However overall, neighborhoods were guessed with a considerably larger probability, even with higher k's, compared to any possible random guess.
+
+The Neighboorhood proportion of the sample was graphed below in order to show the makeup of the sample.  
+
+```{r , echo=FALSE}
+dft2 <- data.frame(Proportion=prop.table(summary(cl_data)))
+dft2 <- cbind(Neighborhood = rownames(dft2), dft2)
+rownames(dft2) <- 1:nrow(dft2)
+ggplot(data=dft2, aes(y=Proportion, x=Neighborhood)) + 
+  theme(axis.text.x=element_text(angle=90,hjust=1)) + 
+  geom_bar(stat="identity", fill=dft2$Neighborhood)  +
+  ggtitle("Sample Neighborhood Proportion") 
+```
+
